@@ -15,7 +15,7 @@ else:
     winreg = None
 
 APP_TITLE = "Windows UI Transparency"
-APP_RUN_KEY = r"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+APP_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_RUN_VALUE = "WindowsUITransparency"
 WCA_ACCENT_POLICY = 19
 ACCENT_DISABLED = 0
