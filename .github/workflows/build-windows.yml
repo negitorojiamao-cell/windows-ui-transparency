@@ -1,0 +1,33 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+      - name: Build executable
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name WindowsUITransparency windows_ui_transparency.py
+      - name: Package artifact
+        run: Compress-Archive -Path dist/WindowsUITransparency.exe -DestinationPath WindowsUITransparency-Windows.zip
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindowsUITransparency-Windows
+          path: WindowsUITransparency-Windows.zip
+          if-no-files-found: error
+          retention-days: 30
