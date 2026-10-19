@@ -1,12 +1,12 @@
 # Windows UI Transparency
 
-Windows 11 のタスクバー背景や、対応ビルドでの時計・アイコン領域の透明度調整を試すデスクトップアプリです。UIは角を抑えた丸みのあるカード、落ち着いた青灰色のテーマ、押下・ホバー時の反応と適用状態の表示を備えています。
+Windows 11 のタスクバー背景や、対応ビルドでの時計・アイコン領域の透明度調整を試すデスクトップアプリです。UIは丸みのある青灰色のテーマ、操作フィードバック、カテゴリーごとのスクロール可能なポップアップ設定を備えています。
 
 ## アプリアイコン
 
-![Windows UI Transparency icon](assets/windows-ui-transparency-icon.png)
+![Windows UI Transparency icon](assets/windows-ui-transparency-icon.svg)
 
-アプリのアイコンは、透明なガラス調のWindows風ペインと青紫の光を組み合わせたデザインです。画像ソースは `assets/windows-ui-transparency-icon.png`、Windows用の複数サイズ `.ico` は `tools/make_icon.py` から生成します。
+アプリのアイコンは、青紫のガラス風フレームと半透明のウィンドウを組み合わせたベクターデザインです。`assets/windows-ui-transparency-icon.svg` が高解像度のマスター画像です。ビルド時に1024×1024 PNGと16〜256pxの複数サイズを含むWindows用 `.ico` を生成し、小さい画像を拡大せずにEXEへ埋め込みます。
 
 ## EXEの機能
 
@@ -14,7 +14,7 @@ Windows 11 のタスクバー背景や、対応ビルドでの時計・アイコ
 - 対応するWindowsビルドでは、時計・アプリアイコン領域の個別透明度を試行
 - 設定保存とExplorer再起動後の再適用
 - EXE版からWindowsサインイン時の自動起動を登録・解除
-- アイコン付きの単体 `WindowsUITransparency.exe` をGitHub Actionsでビルド
+- 1024pxアイコンソースから複数サイズの `.ico` を生成し、単体 `WindowsUITransparency.exe` に埋め込み
 - GitHub Actionsの成果物にはEXEファイルだけを格納（ZIPの中に別のZIPは入れない）
 
 ## EXEをダウンロード
