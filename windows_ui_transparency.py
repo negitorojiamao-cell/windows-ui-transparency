@@ -109,7 +109,9 @@ def apply_taskbar_effect(mode: str, opacity: int = 78) -> tuple[bool, str]:
         state = ACCENT_ENABLE_TRANSPARENTGRADIENT
         color = ((max(0, min(100, opacity)) * 255 // 100) << 24) | 0x00202020
     elif mode == "ぼかし":
-        state, color = ACCENT_ENABLE_BLURBEHIND, 0xCC202020
+        state = ACCENT_ENABLE_BLURBEHIND
+        alpha = max(0, min(100, opacity)) * 255 // 100
+        color = (alpha << 24) | 0x00202020
     else:
         state = ACCENT_ENABLE_ACRYLICBLURBEHIND
         alpha = max(0, min(100, opacity)) * 255 // 100
@@ -747,8 +749,8 @@ class TransparencyApp:
 
     def _refresh_status_style(self, *_args):
         message = self.status.get()
-        negative = ("検出できませんでした", "適用を拒否", "変更できませんでした",
-                    "見つかりません", "エラー", "失敗", "対象外")
+        negative = ("検出できませんでした", "個別制御できません", "適用を拒否",
+                    "変更できませんでした", "見つかりません", "エラー", "失敗", "対象外")
         positive = ("設定しました", "登録しました", "解除しました", "適用しました",
                     "標準状態に戻しました", "保存しました", "再適用しました", "完了")
         if any(term in message for term in negative):
