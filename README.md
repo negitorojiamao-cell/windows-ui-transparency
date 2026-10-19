@@ -4,9 +4,9 @@ Windows 11 のタスクバー背景や、対応ビルドでの時計・アイコ
 
 ## アプリアイコン
 
-![Windows UI Transparency icon](assets/windows-ui-transparency-icon.svg)
+![Windows UI Transparency icon](assets/windows-ui-transparency-icon.png)
 
-アイコンは青いガラス風の角丸タイルと、重ねた半透明のペインを組み合わせたデザインです。ソースは `assets/windows-ui-transparency-icon.svg`、Windows用アイコンは `tools/make_icon.py` から生成します。
+アプリのアイコンは、透明なガラス調のWindows風ペインと青紫の光を組み合わせたデザインです。画像ソースは `assets/windows-ui-transparency-icon.png`、Windows用の複数サイズ `.ico` は `tools/make_icon.py` から生成します。
 
 ## EXEの機能
 
