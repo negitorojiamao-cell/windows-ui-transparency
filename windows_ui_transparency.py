@@ -508,215 +508,332 @@ class TransparencyApp:
         self.last_opacity = self.settings["taskbar_opacity"]
         self._component_original_styles: dict[int, int] = {}
         self._component_names: dict[int, str] = {}
+        self.popups: dict[str, tk.Toplevel] = {}
+        self._status_views: dict[str, tuple[tk.Label, tk.Label]] = {}
+
         self.root.title(APP_TITLE)
-        self.root.geometry("690x850")
-        self.root.minsize(610, 740)
-        self.root.configure(bg="#10151f")
+        self.root.geometry("590x660")
+        self.root.minsize(520, 600)
+        self.root.configure(bg="#0B1118")
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+
+        self.mode = tk.StringVar(value=self.last_mode)
+        self.opacity = tk.IntVar(value=self.last_opacity)
+        self.taskbar_transparency = tk.IntVar(value=100 - self.last_opacity)
+        self.clock_opacity = tk.IntVar(value=self.settings["clock_opacity"])
+        self.icons_opacity = tk.IntVar(value=self.settings["icons_opacity"])
+        self.clock_transparency = tk.IntVar(value=100 - self.clock_opacity.get())
+        self.icons_transparency = tk.IntVar(value=100 - self.icons_opacity.get())
         self.auto_reapply = tk.BooleanVar(value=self.settings["auto_reapply"])
         self.start_with_windows = tk.BooleanVar(value=self._startup_registered())
-        self.status = tk.StringVar(value="準備完了。設定を適用してください。")
+        self.status = tk.StringVar(value="準備完了。設定カテゴリーを選んでください。")
+        self.mode_buttons: dict[str, PillButton] = {}
+
         self._build_ui()
         self._last_hwnd = find_taskbar()
         self.root.after(1800, self._apply_saved_settings)
         self.root.after(2000, self._watch_explorer)
 
     def _build_ui(self):
-        self.root.configure(bg="#0B1118")
-        self.root.geometry("760x980")
-        self.root.minsize(700, 880)
-
-        outer = tk.Frame(self.root, bg="#0B1118", padx=22, pady=18)
+        outer = tk.Frame(self.root, bg="#0B1118", padx=20, pady=18)
         outer.pack(fill="both", expand=True)
 
-        # App identity / compact, calm title area.
         header = tk.Frame(outer, bg="#0B1118")
-        header.pack(fill="x", pady=(0, 13))
-        logo = tk.Canvas(header, width=52, height=52, bg="#0B1118",
+        header.pack(fill="x", pady=(0, 16))
+        logo = tk.Canvas(header, width=48, height=48, bg="#0B1118",
                          highlightthickness=0, bd=0)
-        logo.pack(side="left", padx=(0, 13))
-        logo.create_polygon(_rounded_points(1, 1, 51, 51, 15),
-                            fill="#29495E", outline="#607F93", width=1)
-        for x1, y1, x2, y2 in ((11, 11, 23, 23), (27, 11, 40, 23),
-                               (11, 27, 23, 40), (27, 27, 40, 40)):
+        logo.pack(side="left", padx=(0, 12))
+        logo.create_polygon(_rounded_points(1, 1, 47, 47, 15),
+                            fill="#213D50", outline="#5F8094", width=1)
+        for x1, y1, x2, y2 in ((10, 10, 21, 21), (26, 10, 38, 21),
+                               (10, 26, 21, 38), (26, 26, 38, 38)):
             logo.create_polygon(_rounded_points(x1, y1, x2, y2, 3),
                                 fill="#DCE8ED", outline="")
-        logo.create_polygon(_rounded_points(30, 28, 46, 44, 5),
-                            fill="#7FA5B9", outline="#E2EDF1", width=1)
+        logo.create_polygon(_rounded_points(29, 27, 43, 42, 5),
+                            fill="#85AABD", outline="#E2EDF1", width=1)
+
         title_area = tk.Frame(header, bg="#0B1118")
         title_area.pack(side="left", fill="x", expand=True)
         tk.Label(title_area, text="Windows UI Transparency",
                  bg="#0B1118", fg="#E6EDF1",
-                 font=("Yu Gothic UI", 17, "bold")).pack(anchor="w")
-        tk.Label(title_area, text="Windows 11 の表示を、自分好みに静かに整える",
-                 bg="#0B1118", fg="#8DA0AE",
-                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(2, 0))
-        top_pill = RoundedPanel(header, height=36, fill="#14212C",
-                                border="#293B49", radius=16, inset=8)
-        top_pill.pack(side="right", padx=(8, 0), pady=8)
-        tk.Label(top_pill.inner, text="WINDOWS 11",
-                 bg="#14212C", fg="#B3C4CE",
-                 font=("Segoe UI", 8, "bold")).pack(expand=True)
+                 font=("Yu Gothic UI", 16, "bold")).pack(anchor="w")
+        tk.Label(title_area, text="Windows 11 を、もっと自分好みに。",
+                 bg="#0B1118", fg="#8FA3B1",
+                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(3, 0))
 
-        # Taskbar background controls.
-        task_card = RoundedPanel(outer, height=292, fill="#131E29",
-                                 border="#263947", radius=22, inset=18)
-        task_card.pack(fill="x", pady=(0, 12))
-        tk.Label(task_card.inner, text="タスクバー背景",
-                 bg="#131E29", fg="#E7EEF2",
-                 font=("Yu Gothic UI", 12, "bold")).pack(anchor="w")
-        tk.Label(task_card.inner, text="透明度が高いほどスライダーの色も淡くなります。",
-                 bg="#131E29", fg="#8FA2B0",
-                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(2, 9))
+        intro = RoundedPanel(outer, height=80, fill="#14212C",
+                             border="#2A3E4D", radius=22, inset=16)
+        intro.pack(fill="x", pady=(0, 14))
+        tk.Label(intro.inner, text="何を調整しますか？",
+                 bg="#14212C", fg="#E6EDF1",
+                 font=("Yu Gothic UI", 12, "bold")).pack(anchor="w", pady=(1, 3))
+        self.home_summary = tk.StringVar(value="")
+        tk.Label(intro.inner, textvariable=self.home_summary,
+                 bg="#14212C", fg="#A7BAC6",
+                 font=("Yu Gothic UI", 9), anchor="w").pack(anchor="w")
+        self.mode.trace_add("write", self._refresh_home_summary)
+        self.taskbar_transparency.trace_add("write", self._refresh_home_summary)
+        self._refresh_home_summary()
 
-        mode_row = tk.Frame(task_card.inner, bg="#131E29")
-        mode_row.pack(fill="x", pady=(0, 10))
-        self.mode = tk.StringVar(value=self.last_mode)
-        mode_specs = [
-            ("透明", "透明"),
-            ("ぼかし", "ぼかし"),
-            ("アクリル", "アクリル風"),
-            ("標準", "通常に戻す"),
-        ]
+        self._category_card(
+            outer, key="taskbar", title="タスクバー背景",
+            description="透明・ぼかし・アクリルと背景の透明度",
+            button_text="設定を開く", height=96
+        )
+        self._category_card(
+            outer, key="components", title="時計・アイコン",
+            description="時計とアイコン領域を個別調整（対応環境のみ）",
+            button_text="設定を開く", height=96
+        )
+        self._category_card(
+            outer, key="startup", title="動作設定",
+            description="自動再適用、Windowsスタートアップ登録",
+            button_text="設定を開く", height=96
+        )
+
+        status_panel = RoundedPanel(outer, height=68, fill="#101B25",
+                                    border="#273B49", radius=20, inset=14)
+        status_panel.pack(fill="x", pady=(7, 0))
+        self._add_status_view(status_panel.inner, "home", "#101B25")
+        tk.Label(outer, text="設定はカテゴリーごとのポップアップで表示されます。",
+                 bg="#0B1118", fg="#718594",
+                 font=("Yu Gothic UI", 8)).pack(anchor="center", pady=(10, 0))
+        self._refresh_status_style()
+
+    def _category_card(self, parent, key: str, title: str,
+                       description: str, button_text: str, height: int = 96):
+        panel = RoundedPanel(parent, height=height, fill="#131E29",
+                             border="#263947", radius=21, inset=15)
+        panel.pack(fill="x", pady=(0, 9))
+        row = tk.Frame(panel.inner, bg="#131E29")
+        row.pack(fill="both", expand=True)
+        copy = tk.Frame(row, bg="#131E29")
+        copy.pack(side="left", fill="both", expand=True)
+        tk.Label(copy, text=title, bg="#131E29", fg="#E4ECF1",
+                 font=("Yu Gothic UI", 11, "bold")).pack(anchor="w", pady=(1, 3))
+        tk.Label(copy, text=description, bg="#131E29", fg="#899EAD",
+                 font=("Yu Gothic UI", 8), wraplength=360,
+                 justify="left").pack(anchor="w")
+        PillButton(
+            row, button_text, command=lambda k=key: self.open_settings_popup(k),
+            width=112, height=36, fill="#213442", hover="#324B5B",
+            selected_fill="#36576A", foreground="#DFE9EF",
+            border="#395466", radius=18,
+            font=("Yu Gothic UI", 9, "bold")
+        ).pack(side="right", padx=(9, 0))
+
+    def _add_status_view(self, parent, key: str, bg: str):
+        row = tk.Frame(parent, bg=bg)
+        row.pack(fill="both", expand=True)
+        dot = tk.Label(row, text="●", bg=bg, fg="#8CA4B4",
+                       font=("Segoe UI", 11))
+        dot.pack(side="left", padx=(0, 9))
+        label = tk.Label(row, textvariable=self.status, bg=bg, fg="#B8C8D2",
+                         font=("Yu Gothic UI", 9), anchor="w", justify="left",
+                         wraplength=480)
+        label.pack(side="left", fill="both", expand=True)
+        self._status_views[key] = (label, dot)
+
+    def open_settings_popup(self, key: str):
+        if key in self.popups:
+            popup = self.popups[key]
+            try:
+                if popup.winfo_exists():
+                    popup.deiconify()
+                    popup.lift()
+                    popup.focus_force()
+                    return
+            except tk.TclError:
+                pass
+
+        configs = {
+            "taskbar": ("タスクバー背景", 570, 500),
+            "components": ("時計・アイコンの個別調整", 570, 610),
+            "startup": ("動作設定", 560, 470),
+        }
+        title, width, requested_height = configs[key]
+        popup = tk.Toplevel(self.root)
+        popup.title(title)
+        popup.configure(bg="#0B1118")
+        popup.transient(self.root)
+        screen_h = popup.winfo_screenheight()
+        height = min(requested_height, max(430, screen_h - 100))
+        popup.geometry(f"{width}x{height}")
+        popup.minsize(500, min(430, height))
+        popup.resizable(True, True)
+        try:
+            popup.iconbitmap(default=str(bundled_path("assets/windows-ui-transparency.ico")))
+        except (tk.TclError, OSError):
+            pass
+        self.popups[key] = popup
+        popup.protocol("WM_DELETE_WINDOW", lambda k=key: self._close_popup(k))
+
+        body = tk.Frame(popup, bg="#0B1118", padx=20, pady=18)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text=title, bg="#0B1118", fg="#E7EEF2",
+                 font=("Yu Gothic UI", 15, "bold")).pack(anchor="w")
+        subtitles = {
+            "taskbar": "モードを選び、透明度を調整して適用します。",
+            "components": "表示できる個別ウィンドウがある場合のみ調整できます。",
+            "startup": "Windows起動時の動作を管理します。",
+        }
+        tk.Label(body, text=subtitles[key], bg="#0B1118", fg="#8FA2B0",
+                 font=("Yu Gothic UI", 9), wraplength=500,
+                 justify="left").pack(anchor="w", pady=(4, 13))
+
+        if key == "taskbar":
+            self._build_taskbar_popup(body)
+        elif key == "components":
+            self._build_components_popup(body)
+        else:
+            self._build_startup_popup(body)
+
+        status_panel = RoundedPanel(body, height=65, fill="#101B25",
+                                    border="#273B49", radius=19, inset=13)
+        status_panel.pack(fill="x", side="bottom", pady=(12, 0))
+        self._add_status_view(status_panel.inner, key, "#101B25")
+        popup.bind("<Escape>", lambda _event, k=key: self._close_popup(k))
+        popup.after(80, popup.focus_force)
+        self._refresh_status_style()
+
+    def _close_popup(self, key: str):
+        popup = self.popups.pop(key, None)
+        self._status_views.pop(key, None)
+        if popup is not None:
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+
+    def _build_taskbar_popup(self, parent):
+        panel = RoundedPanel(parent, height=286, fill="#131E29",
+                             border="#263947", radius=21, inset=16)
+        panel.pack(fill="x", expand=False)
+        inner = panel.inner
         self.mode_buttons = {}
-        for label, value in mode_specs:
+        mode_row = tk.Frame(inner, bg="#131E29")
+        mode_row.pack(fill="x", pady=(0, 12))
+        options = [("透明", "透明"), ("ぼかし", "ぼかし"),
+                   ("アクリル", "アクリル風"), ("標準", "通常に戻す")]
+        for label, value in options:
             button = PillButton(
                 mode_row, label, command=lambda v=value: self.select_mode(v),
-                width=112, height=36, fill="#1B2A36", hover="#2B4050",
+                width=108, height=36, fill="#1B2A36", hover="#2B4050",
                 selected_fill="#3B5A6D", foreground="#DCE7ED",
                 border="#304656", selected=(self.mode.get() == value),
                 radius=18, font=("Yu Gothic UI", 9, "bold")
             )
-            button.pack(side="left", fill="x", expand=True, padx=(0, 7))
+            button.pack(side="left", fill="x", expand=True, padx=(0, 6))
             self.mode_buttons[value] = button
 
-        self.opacity = tk.IntVar(value=self.last_opacity)  # Native alpha / opacity.
-        self.taskbar_transparency = tk.IntVar(value=100 - self.last_opacity)
         self.taskbar_slider = TransparencySlider(
-            task_card.inner, "背景の透明度", self.taskbar_transparency,
-            on_change=self._taskbar_transparency_changed, bg="#131E29",
-            foreground="#DDE6EB", muted="#8FA2B0"
+            inner, "背景の透明度", self.taskbar_transparency,
+            on_change=self._taskbar_transparency_changed,
+            bg="#131E29", foreground="#DDE6EB", muted="#8FA2B0"
         )
-        self.taskbar_slider.pack(fill="x", pady=(0, 7))
-
-        action_row = tk.Frame(task_card.inner, bg="#131E29")
-        action_row.pack(fill="x", pady=(3, 0))
+        self.taskbar_slider.pack(fill="x", pady=(3, 13))
+        tk.Label(inner, text="低い：濃い色・不透明　　高い：淡い色・透明",
+                 bg="#131E29", fg="#8295A4",
+                 font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(0, 13))
+        action_row = tk.Frame(inner, bg="#131E29")
+        action_row.pack(fill="x")
         PillButton(
-            action_row, "適用する", self.apply_taskbar, width=132, height=38,
-            fill="#344F61", hover="#45667A", selected_fill="#3B5A6D",
-            foreground="#F0F5F7", border="#527185", radius=19
+            action_row, "適用する", self.apply_taskbar, width=126, height=38,
+            fill="#344F61", hover="#45667A", foreground="#F0F5F7",
+            border="#527185", radius=19
         ).pack(side="left")
         PillButton(
-            action_row, "標準に戻す", self.restore_taskbar, width=132, height=38,
+            action_row, "標準に戻す", self.restore_taskbar, width=126, height=38,
             fill="#202E39", hover="#30414D", foreground="#CBD7DE",
             border="#344653", radius=19
         ).pack(side="left", padx=(9, 0))
-        tk.Label(task_card.inner,
-                 text="※ タスクバーの描画方式はWindowsのビルドによって異なります。",
-                 bg="#131E29", fg="#8295A4",
-                 font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(8, 0))
+        tk.Label(parent,
+                 text="※ Windowsの描画方式によって見え方が異なる場合があります。",
+                 bg="#0B1118", fg="#718594",
+                 font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(10, 0))
 
-        # Component controls.
-        item_card = RoundedPanel(outer, height=290, fill="#131E29",
-                                 border="#263947", radius=22, inset=18)
-        item_card.pack(fill="x", pady=(0, 12))
-        tk.Label(item_card.inner, text="個別の表示調整",
-                 bg="#131E29", fg="#E7EEF2",
-                 font=("Yu Gothic UI", 12, "bold")).pack(anchor="w")
-        tk.Label(item_card.inner, text="対象のウィンドウが検出できる環境でのみ適用できます。",
-                 bg="#131E29", fg="#8FA2B0",
-                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(2, 8))
+    def _build_components_popup(self, parent):
+        panel = RoundedPanel(parent, height=380, fill="#131E29",
+                             border="#263947", radius=21, inset=16)
+        panel.pack(fill="x", expand=False)
+        inner = panel.inner
 
-        self.clock_opacity = tk.IntVar(value=self.settings["clock_opacity"])
-        self.icons_opacity = tk.IntVar(value=self.settings["icons_opacity"])
-        self.clock_transparency = tk.IntVar(value=100 - self.clock_opacity.get())
-        self.icons_transparency = tk.IntVar(value=100 - self.icons_opacity.get())
+        def component_header(title: str, button_text: str, callback):
+            row = tk.Frame(inner, bg="#131E29")
+            row.pack(fill="x")
+            tk.Label(row, text=title, bg="#131E29", fg="#DDE6EB",
+                     font=("Yu Gothic UI", 10, "bold")).pack(side="left")
+            PillButton(
+                row, button_text, callback, width=132, height=32,
+                fill="#1D2E3A", hover="#2F4656", foreground="#DCE7ED",
+                border="#314A5A", radius=16,
+                font=("Yu Gothic UI", 9, "bold")
+            ).pack(side="right")
 
-        clock_head = tk.Frame(item_card.inner, bg="#131E29")
-        clock_head.pack(fill="x")
-        tk.Label(clock_head, text="時計", bg="#131E29", fg="#DDE6EB",
-                 font=("Yu Gothic UI", 10, "bold")).pack(side="left")
-        PillButton(
-            clock_head, "時計に適用", lambda: self.apply_component("clock"),
-            width=116, height=32, fill="#1D2E3A", hover="#2F4656",
-            foreground="#DCE7ED", border="#314A5A", radius=16,
-            font=("Yu Gothic UI", 9, "bold")
-        ).pack(side="right")
+        component_header("時計", "時計に適用",
+                         lambda: self.apply_component("clock"))
         self.clock_slider = TransparencySlider(
-            item_card.inner, "透明度", self.clock_transparency,
-            on_change=self._clock_transparency_changed, bg="#131E29",
-            foreground="#DDE6EB", muted="#8FA2B0"
+            inner, "時計の透明度", self.clock_transparency,
+            on_change=self._clock_transparency_changed,
+            bg="#131E29", foreground="#DDE6EB", muted="#8FA2B0"
         )
-        self.clock_slider.pack(fill="x", pady=(0, 7))
+        self.clock_slider.pack(fill="x", pady=(7, 14))
 
-        divider = tk.Frame(item_card.inner, bg="#293B48", height=1)
-        divider.pack(fill="x", pady=(1, 8))
+        tk.Frame(inner, bg="#293B48", height=1).pack(fill="x", pady=(0, 13))
 
-        icons_head = tk.Frame(item_card.inner, bg="#131E29")
-        icons_head.pack(fill="x")
-        tk.Label(icons_head, text="アプリアイコン領域",
-                 bg="#131E29", fg="#DDE6EB",
-                 font=("Yu Gothic UI", 10, "bold")).pack(side="left")
-        PillButton(
-            icons_head, "アイコンに適用", lambda: self.apply_component("icons"),
-            width=132, height=32, fill="#1D2E3A", hover="#2F4656",
-            foreground="#DCE7ED", border="#314A5A", radius=16,
-            font=("Yu Gothic UI", 9, "bold")
-        ).pack(side="right")
+        component_header("アプリアイコン領域", "アイコンに適用",
+                         lambda: self.apply_component("icons"))
         self.icons_slider = TransparencySlider(
-            item_card.inner, "透明度", self.icons_transparency,
-            on_change=self._icons_transparency_changed, bg="#131E29",
-            foreground="#DDE6EB", muted="#8FA2B0"
+            inner, "アイコン領域の透明度", self.icons_transparency,
+            on_change=self._icons_transparency_changed,
+            bg="#131E29", foreground="#DDE6EB", muted="#8FA2B0"
         )
-        self.icons_slider.pack(fill="x", pady=(0, 2))
-        tk.Label(item_card.inner,
-                 text="時計・アイコンは新しいWindows 11で独立したウィンドウとして検出できない場合があります。",
-                 bg="#131E29", fg="#8295A4", wraplength=655,
-                 justify="left", font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(2, 0))
+        self.icons_slider.pack(fill="x", pady=(7, 13))
 
-        # Options.
-        options_card = RoundedPanel(outer, height=116, fill="#131E29",
-                                    border="#263947", radius=22, inset=16)
-        options_card.pack(fill="x", pady=(0, 12))
-        tk.Label(options_card.inner, text="動作設定",
-                 bg="#131E29", fg="#E7EEF2",
-                 font=("Yu Gothic UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
-        self.auto_reapply = tk.BooleanVar(value=self.settings["auto_reapply"])
+        tk.Label(inner,
+                 text="Windows 11の一部ビルドでは時計やアイコン領域が独立したウィンドウとして存在しないため、個別調整できない場合があります。",
+                 bg="#131E29", fg="#B19C80", wraplength=480,
+                 justify="left", font=("Yu Gothic UI", 8)).pack(anchor="w")
+
+    def _build_startup_popup(self, parent):
+        panel = RoundedPanel(parent, height=196, fill="#131E29",
+                             border="#263947", radius=21, inset=16)
+        panel.pack(fill="x", expand=False)
+        inner = panel.inner
+
         self.reapply_switch = SmoothSwitch(
-            options_card.inner, "Explorer再起動後に設定を再適用",
+            inner, "Explorer再起動後に設定を再適用",
             self.auto_reapply, command=self._save_current_settings,
             bg="#131E29", foreground="#DDE6EB", muted="#7C8D9A"
         )
-        self.reapply_switch.pack(fill="x", pady=(1, 5))
-        self.start_with_windows = tk.BooleanVar(value=self._startup_registered())
+        self.reapply_switch.pack(fill="x", pady=(0, 14))
+        tk.Frame(inner, bg="#293B48", height=1).pack(fill="x", pady=(0, 13))
         self.startup_switch = SmoothSwitch(
-            options_card.inner, "Windowsサインイン時に起動（タスクマネージャーに表示）",
+            inner, "Windowsサインイン時に自動起動",
             self.start_with_windows, command=self.toggle_startup,
-            bg="#131E29", foreground="#DDE6EB", muted="#7C8D9A"
+            bg="#131E29", foreground="#DDE6EB", muted="#7C8D9A",
+            enabled=self._is_frozen_exe()
         )
         self.startup_switch.pack(fill="x")
+        tk.Label(inner,
+                 text="EXEの場所を移動・削除すると登録が無効になります。場所を決めてから登録してください。",
+                 bg="#131E29", fg="#899DAB", wraplength=480,
+                 justify="left", font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(13, 0))
         if not self._is_frozen_exe():
-            self.startup_switch.set_enabled(False)
-            tk.Label(options_card.inner, text="自動起動登録はビルド済みEXEで利用できます。",
-                     bg="#131E29", fg="#B39B71",
-                     font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(2, 0))
+            tk.Label(inner, text="自動起動登録はビルド済みEXEでのみ使用できます。",
+                     bg="#131E29", fg="#B19C80",
+                     font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(6, 0))
 
-        # Persistent state feedback.
-        self.status_panel = RoundedPanel(outer, height=62, fill="#101B25",
-                                         border="#273B49", radius=20, inset=14)
-        self.status_panel.pack(fill="x")
-        status_row = tk.Frame(self.status_panel.inner, bg="#101B25")
-        status_row.pack(fill="both", expand=True)
-        self.status_dot = tk.Label(status_row, text="●", bg="#101B25",
-                                   fg="#8CA4B4", font=("Segoe UI", 12))
-        self.status_dot.pack(side="left", padx=(0, 9))
-        self.status_label = tk.Label(status_row, textvariable=self.status,
-                                     bg="#101B25", fg="#B8C8D2",
-                                     font=("Yu Gothic UI", 9), anchor="w",
-                                     justify="left", wraplength=640)
-        self.status_label.pack(side="left", fill="both", expand=True)
-        self.status.trace_add("write", self._refresh_status_style)
-        self._refresh_status_style()
+    def _refresh_home_summary(self, *_args):
+        if hasattr(self, "home_summary"):
+            mode_labels = {
+                "透明": "透明", "ぼかし": "ぼかし",
+                "アクリル風": "アクリル", "通常に戻す": "標準"
+            }
+            transparency = max(0, min(100, int(self.taskbar_transparency.get())))
+            self.home_summary.set(
+                f"タスクバー：{mode_labels.get(self.mode.get(), self.mode.get())}　・　透明度 {transparency}%"
+            )
 
     def select_mode(self, mode: str):
         self.mode.set(mode)
@@ -729,20 +846,20 @@ class TransparencyApp:
 
     def _taskbar_transparency_changed(self, value: int):
         self.opacity.set(100 - int(value))
-        self._set_status(f"背景の透明度を {value}% に調整中です。［適用する］で反映します。", "info")
+        self._refresh_home_summary()
+        self._set_status(f"背景の透明度を {value}% に調整中です。［適用する］で反映します。")
 
     def _clock_transparency_changed(self, value: int):
         self.clock_opacity.set(100 - int(value))
-        self._set_status(f"時計の透明度を {value}% に調整中です。［時計に適用］で反映します。", "info")
+        self._set_status(f"時計の透明度を {value}% に調整中です。［時計に適用］で反映します。")
 
     def _icons_transparency_changed(self, value: int):
         self.icons_opacity.set(100 - int(value))
-        self._set_status(f"アイコン領域の透明度を {value}% に調整中です。［アイコンに適用］で反映します。", "info")
+        self._set_status(f"アイコン領域の透明度を {value}% に調整中です。［アイコンに適用］で反映します。")
 
     def _opacity_changed(self, _value=None):
-        # Backward compatibility for older code paths.
-        if hasattr(self, "taskbar_transparency"):
-            self.taskbar_transparency.set(100 - int(self.opacity.get()))
+        self.taskbar_transparency.set(100 - int(self.opacity.get()))
+        self._refresh_home_summary()
 
     def _set_status(self, message: str, _kind: str | None = None):
         self.status.set(message)
@@ -754,20 +871,19 @@ class TransparencyApp:
         positive = ("設定しました", "登録しました", "解除しました", "適用しました",
                     "標準状態に戻しました", "保存しました", "再適用しました", "完了")
         if any(term in message for term in negative):
-            color = "#E0B8A8"
-            dot = "#CA8D73"
+            color, dot = "#E0B8A8", "#CA8D73"
         elif any(term in message for term in positive):
-            color = "#C1D8C8"
-            dot = "#8EB49A"
+            color, dot = "#C1D8C8", "#8EB49A"
         elif "調整中" in message or "適用しています" in message:
-            color = "#D3E1E8"
-            dot = "#A7C4D4"
+            color, dot = "#D3E1E8", "#A7C4D4"
         else:
-            color = "#B8C8D2"
-            dot = "#8CA4B4"
-        if hasattr(self, "status_label"):
-            self.status_label.configure(fg=color)
-            self.status_dot.configure(fg=dot)
+            color, dot = "#B8C8D2", "#8CA4B4"
+        for label, status_dot in list(getattr(self, "_status_views", {}).values()):
+            try:
+                label.configure(fg=color)
+                status_dot.configure(fg=dot)
+            except tk.TclError:
+                pass
 
     def _is_frozen_exe(self) -> bool:
         return sys.platform == "win32" and bool(getattr(sys, "frozen", False))
@@ -800,7 +916,7 @@ class TransparencyApp:
                     except FileNotFoundError:
                         pass
                     message = "Windowsサインイン時の自動起動登録を解除しました。"
-            self.status.set(message)
+            self._set_status(message)
         except OSError as exc:
             self.start_with_windows.set(not enabled)
             messagebox.showerror(APP_TITLE, f"スタートアップ登録を変更できませんでした。\n{exc}")
@@ -840,6 +956,7 @@ class TransparencyApp:
         if ok:
             self.last_mode, self.last_opacity = mode, opacity
             self._save_current_settings()
+            self._refresh_home_summary()
         else:
             messagebox.showwarning(APP_TITLE, message)
 
@@ -915,8 +1032,7 @@ class TransparencyApp:
         self._save_current_settings()
         ok, message = self._set_component_opacity(component, value, show_status=False)
         self._set_status(("✓ " if ok else "！ ") + message)
-        if not ok:
-            messagebox.showwarning(APP_TITLE, message)
+        # Keep compatibility feedback in the panel instead of blocking with another dialog.
 
     def _restore_all_component_styles(self):
         setter = _window_long_function(False)
