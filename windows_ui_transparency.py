@@ -274,6 +274,19 @@ class PillButton(tk.Canvas):
         self.selected = bool(selected)
         self._draw()
 
+    def _variable_changed(self, *_args):
+        if not self._changing:
+            self._position = 35.0 if self.variable.get() else 13.0
+            self._draw()
+
+    def _dispose_trace(self, event):
+        if event.widget is self and getattr(self, "_trace_id", None):
+            try:
+                self.variable.trace_remove("write", self._trace_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._trace_id = None
+
     def set_enabled(self, enabled: bool):
         self.enabled = bool(enabled)
         self.configure(cursor="hand2" if enabled else "arrow")
@@ -343,6 +356,9 @@ class SmoothSwitch(tk.Frame):
                               justify="left", wraplength=565)
         self.label.pack(side="left", fill="x", expand=True)
         self._position = 35.0 if variable.get() else 13.0
+        self._changing = False
+        self._trace_id = self.variable.trace_add("write", self._variable_changed)
+        self.bind("<Destroy>", self._dispose_trace, add="+")
         self.canvas.bind("<Button-1>", self._toggle)
         self.label.bind("<Button-1>", self._toggle)
         self.bind("<Button-1>", self._toggle)
@@ -384,7 +400,9 @@ class SmoothSwitch(tk.Frame):
         if not self.enabled:
             return
         old = 35.0 if self.variable.get() else 13.0
+        self._changing = True
         self.variable.set(not self.variable.get())
+        self._changing = False
         target = 35.0 if self.variable.get() else 13.0
         if self.command:
             self.command()
@@ -431,8 +449,17 @@ class TransparencySlider(tk.Frame):
         self.canvas.bind("<ButtonRelease-1>", self._end_drag)
         self.canvas.bind("<Enter>", self._enter)
         self.canvas.bind("<Leave>", self._leave)
-        self.variable.trace_add("write", self._value_changed)
+        self._trace_id = self.variable.trace_add("write", self._value_changed)
+        self.bind("<Destroy>", self._dispose_trace, add="+")
         self._draw()
+
+    def _dispose_trace(self, event):
+        if event.widget is self and getattr(self, "_trace_id", None):
+            try:
+                self.variable.trace_remove("write", self._trace_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._trace_id = None
 
     @classmethod
     def _color_for_value(cls, value: int) -> str:
@@ -527,6 +554,7 @@ class TransparencyApp:
         self.auto_reapply = tk.BooleanVar(value=self.settings["auto_reapply"])
         self.start_with_windows = tk.BooleanVar(value=self._startup_registered())
         self.status = tk.StringVar(value="準備完了。設定カテゴリーを選んでください。")
+        self.status.trace_add("write", self._refresh_status_style)
         self.mode_buttons: dict[str, PillButton] = {}
 
         self._build_ui()
@@ -681,17 +709,40 @@ class TransparencyApp:
                  font=("Yu Gothic UI", 9), wraplength=500,
                  justify="left").pack(anchor="w", pady=(4, 13))
 
-        if key == "taskbar":
-            self._build_taskbar_popup(body)
-        elif key == "components":
-            self._build_components_popup(body)
-        else:
-            self._build_startup_popup(body)
-
+        # Pin status at the bottom and keep settings scrollable on short displays.
         status_panel = RoundedPanel(body, height=65, fill="#101B25",
                                     border="#273B49", radius=19, inset=13)
         status_panel.pack(fill="x", side="bottom", pady=(12, 0))
         self._add_status_view(status_panel.inner, key, "#101B25")
+
+        content_wrapper = tk.Frame(body, bg="#0B1118")
+        content_wrapper.pack(fill="both", expand=True, pady=(6, 0))
+        content_canvas = tk.Canvas(content_wrapper, bg="#0B1118",
+                                   highlightthickness=0, bd=0)
+        content_scrollbar = ttk.Scrollbar(content_wrapper, orient="vertical",
+                                          command=content_canvas.yview)
+        content_canvas.configure(yscrollcommand=content_scrollbar.set)
+        content_scrollbar.pack(side="right", fill="y")
+        content_canvas.pack(side="left", fill="both", expand=True)
+
+        content = tk.Frame(content_canvas, bg="#0B1118")
+        content_window = content_canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def update_scroll_region(_event=None):
+            content_canvas.configure(scrollregion=content_canvas.bbox("all"))
+
+        def fit_content_width(event):
+            content_canvas.itemconfigure(content_window, width=max(1, event.width))
+
+        content.bind("<Configure>", update_scroll_region)
+        content_canvas.bind("<Configure>", fit_content_width)
+
+        if key == "taskbar":
+            self._build_taskbar_popup(content)
+        elif key == "components":
+            self._build_components_popup(content)
+        else:
+            self._build_startup_popup(content)
         popup.bind("<Escape>", lambda _event, k=key: self._close_popup(k))
         popup.after(80, popup.focus_force)
         self._refresh_status_style()
