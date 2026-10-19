@@ -24,12 +24,10 @@ jobs:
         run: python tools/make_icon.py
       - name: Build icon-branded executable
         run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name WindowsUITransparency --icon=assets/windows-ui-transparency.ico --add-data "assets/windows-ui-transparency.ico;assets" windows_ui_transparency.py
-      - name: Package executable and icon
-        run: Compress-Archive -Path dist/WindowsUITransparency.exe, assets/windows-ui-transparency.ico, assets/windows-ui-transparency-icon.png -DestinationPath WindowsUITransparency-Windows.zip
-      - name: Upload EXE artifact
+      - name: Upload EXE only
         uses: actions/upload-artifact@v4
         with:
-          name: WindowsUITransparency-Windows
-          path: WindowsUITransparency-Windows.zip
+          name: WindowsUITransparency-EXE
+          path: dist/WindowsUITransparency.exe
           if-no-files-found: error
           retention-days: 30
