@@ -487,11 +487,22 @@ class TransparencyApp:
         self.root.destroy()
 
 
+def bundled_path(relative: str) -> Path:
+    # PyInstaller one-file builds extract bundled resources to _MEIPASS.
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / relative
+
+
 def main():
     if sys.platform != "win32":
-        print("このアプリはWindows専用です。")
+        print("このアプリはWindows 11専用です。")
         raise SystemExit(1)
     root = tk.Tk()
+    try:
+        root.iconbitmap(default=str(bundled_path("assets/windows-ui-transparency.ico")))
+    except (tk.TclError, OSError):
+        # The EXE still contains the icon resource even when Tk cannot load it.
+        pass
     TransparencyApp(root)
     root.mainloop()
 
