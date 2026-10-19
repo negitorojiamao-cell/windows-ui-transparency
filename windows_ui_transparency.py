@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import math
 import os
 import sys
 import tkinter as tk
@@ -176,6 +177,327 @@ def _window_long_function(getter: bool):
     return None
 
 
+
+def _rounded_points(x1: float, y1: float, x2: float, y2: float, radius: float) -> list[float]:
+    """Return polygon coordinates with softly rounded corners."""
+    radius = max(1.0, min(radius, (x2 - x1) / 2, (y2 - y1) / 2))
+    points: list[tuple[float, float]] = [(x1 + radius, y1), (x2 - radius, y1)]
+    corners = [
+        (x2 - radius, y1 + radius, -90, 0),
+        (x2 - radius, y2 - radius, 0, 90),
+        (x1 + radius, y2 - radius, 90, 180),
+        (x1 + radius, y1 + radius, 180, 270),
+    ]
+    for cx, cy, start, end in corners:
+        for degree in range(start, end + 1, 15):
+            angle = math.radians(degree)
+            points.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    points.append((x1 + radius, y1))
+    flattened: list[float] = []
+    for x, y in points:
+        flattened.extend((x, y))
+    return flattened
+
+
+def _mix_color(start: str, end: str, amount: float) -> str:
+    amount = max(0.0, min(1.0, amount))
+    a = tuple(int(start[i:i + 2], 16) for i in (1, 3, 5))
+    b = tuple(int(end[i:i + 2], 16) for i in (1, 3, 5))
+    rgb = tuple(round(a[i] + (b[i] - a[i]) * amount) for i in range(3))
+    return "#" + "".join(f"{part:02x}" for part in rgb)
+
+
+class RoundedPanel(tk.Canvas):
+    """A canvas-drawn rounded card with a normal Tk frame inset inside it."""
+    def __init__(self, parent, height: int, fill: str = "#151F2B",
+                 border: str = "#293B4B", radius: int = 20, inset: int = 16):
+        super().__init__(parent, height=height, bg=parent.cget("bg"),
+                         highlightthickness=0, bd=0, relief="flat")
+        self.fill = fill
+        self.border = border
+        self.radius = radius
+        self.inset = inset
+        self.inner = tk.Frame(self, bg=fill, bd=0, highlightthickness=0)
+        self.window_id = self.create_window((inset, 12), anchor="nw", window=self.inner)
+        self.bind("<Configure>", self._layout)
+        self._layout()
+
+    def _layout(self, _event=None):
+        width = max(1, self.winfo_width())
+        height = max(1, self.winfo_height())
+        self.delete("card-shape")
+        self.create_polygon(
+            _rounded_points(1, 1, width - 2, height - 2, self.radius),
+            fill=self.fill, outline=self.border, width=1, tags="card-shape"
+        )
+        self.tag_lower("card-shape")
+        self.coords(self.window_id, self.inset, 12)
+        self.itemconfigure(self.window_id,
+                           width=max(1, width - self.inset * 2),
+                           height=max(1, height - 24))
+
+
+class PillButton(tk.Canvas):
+    """Rounded button with clear hover and press feedback."""
+    def __init__(self, parent, text: str, command, width: int = 132, height: int = 38,
+                 fill: str = "#263747", hover: str = "#344A5C",
+                 selected_fill: str = "#38596D", foreground: str = "#E8EEF2",
+                 border: str = "#3D5364", selected: bool = False,
+                 radius: int = 18, font=("Yu Gothic UI", 10, "bold")):
+        super().__init__(parent, width=width, height=height, bg=parent.cget("bg"),
+                         highlightthickness=0, bd=0)
+        self.text = text
+        self.command = command
+        self.width = width
+        self.height = height
+        self.fill = fill
+        self.hover_fill = hover
+        self.selected_fill = selected_fill
+        self.foreground = foreground
+        self.border = border
+        self.selected = selected
+        self.radius = radius
+        self.font = font
+        self.hovered = False
+        self.pressed = False
+        self.enabled = True
+        self.bind("<Configure>", self._draw)
+        self.bind("<Enter>", self._enter)
+        self.bind("<Leave>", self._leave)
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+        self._draw()
+
+    def set_selected(self, selected: bool):
+        self.selected = bool(selected)
+        self._draw()
+
+    def set_enabled(self, enabled: bool):
+        self.enabled = bool(enabled)
+        self.configure(cursor="hand2" if enabled else "arrow")
+        self._draw()
+
+    def _draw(self, _event=None):
+        self.delete("all")
+        w = max(1, self.winfo_width())
+        h = max(1, self.winfo_height())
+        inset = 3 if self.pressed else (1 if self.hovered else 2)
+        fill = self.selected_fill if self.selected else self.fill
+        if self.hovered and self.enabled:
+            fill = self.hover_fill if not self.selected else _mix_color(self.selected_fill, "#526D7E", 0.35)
+        if not self.enabled:
+            fill = "#202B36"
+        self.create_polygon(
+            _rounded_points(inset, inset, w - inset, h - inset, self.radius),
+            fill=fill, outline=self.border if self.enabled else "#2C3742", width=1
+        )
+        fg = self.foreground if self.enabled else "#72808D"
+        self.create_text(w / 2, h / 2 - (1 if self.pressed else 0),
+                         text=self.text, fill=fg, font=self.font)
+
+    def _enter(self, _event=None):
+        self.hovered = True
+        self._draw()
+
+    def _leave(self, _event=None):
+        self.hovered = False
+        self.pressed = False
+        self._draw()
+
+    def _press(self, event):
+        if not self.enabled:
+            return
+        self.pressed = True
+        self._draw()
+
+    def _release(self, event):
+        if not self.enabled:
+            return
+        inside = 0 <= event.x <= self.winfo_width() and 0 <= event.y <= self.winfo_height()
+        was_pressed = self.pressed
+        self.pressed = False
+        self._draw()
+        if inside and was_pressed and self.command:
+            self.after(65, self.command)
+
+
+class SmoothSwitch(tk.Frame):
+    """Compact rounded toggle with a short animated thumb transition."""
+    def __init__(self, parent, text: str, variable: tk.BooleanVar, command=None,
+                 bg: str = "#151F2B", foreground: str = "#DCE5EC",
+                 muted: str = "#91A2B2", enabled: bool = True):
+        super().__init__(parent, bg=bg, bd=0, highlightthickness=0)
+        self.variable = variable
+        self.command = command
+        self.bg_color = bg
+        self.foreground = foreground
+        self.muted = muted
+        self.enabled = enabled
+        self.canvas = tk.Canvas(self, width=48, height=28, bg=bg,
+                                highlightthickness=0, bd=0, cursor="hand2")
+        self.canvas.pack(side="left", padx=(0, 10))
+        self.label = tk.Label(self, text=text, bg=bg, fg=foreground,
+                              font=("Yu Gothic UI", 10), anchor="w",
+                              justify="left", wraplength=565)
+        self.label.pack(side="left", fill="x", expand=True)
+        self._position = 35.0 if variable.get() else 13.0
+        self.canvas.bind("<Button-1>", self._toggle)
+        self.label.bind("<Button-1>", self._toggle)
+        self.bind("<Button-1>", self._toggle)
+        self.canvas.bind("<Enter>", self._hover)
+        self.canvas.bind("<Leave>", self._leave)
+        self._draw()
+
+    def set_enabled(self, enabled: bool):
+        self.enabled = bool(enabled)
+        self.label.configure(fg=self.foreground if enabled else self.muted)
+        self.canvas.configure(cursor="hand2" if enabled else "arrow")
+        self._draw()
+
+    def _hover(self, _event=None):
+        if self.enabled:
+            self.canvas.configure(cursor="hand2")
+
+    def _leave(self, _event=None):
+        self._draw()
+
+    def _draw(self):
+        self.canvas.delete("all")
+        on = bool(self.variable.get())
+        track = "#536F81" if on else "#2A3A48"
+        if not self.enabled:
+            track = "#202A34"
+        points = _rounded_points(2, 3, 46, 25, 11)
+        self.canvas.create_polygon(points, fill=track, outline="#526879" if on else "#354653")
+        x = self._position
+        knob_fill = "#EDF3F5" if on else "#9EAFBA"
+        if not self.enabled:
+            knob_fill = "#75838E"
+        self.canvas.create_oval(x - 8, 14 - 8, x + 8, 14 + 8,
+                                fill=knob_fill, outline="")
+        if on:
+            self.canvas.create_oval(x - 3, 11, x + 3, 17, fill="#D1E3EA", outline="")
+
+    def _toggle(self, _event=None):
+        if not self.enabled:
+            return
+        old = 35.0 if self.variable.get() else 13.0
+        self.variable.set(not self.variable.get())
+        target = 35.0 if self.variable.get() else 13.0
+        if self.command:
+            self.command()
+        steps = 4
+        for step in range(1, steps + 1):
+            value = old + (target - old) * step / steps
+            self.after(step * 14, lambda v=value: self._animate_to(v))
+
+    def _animate_to(self, value: float):
+        self._position = value
+        self._draw()
+
+
+class TransparencySlider(tk.Frame):
+    """Color-feedback slider: low transparency is calm/deeper; high is pale."""
+    LOW_COLOR = "#466579"
+    HIGH_COLOR = "#D8E5EA"
+
+    def __init__(self, parent, label: str, variable: tk.IntVar, on_change=None,
+                 bg: str = "#151F2B", foreground: str = "#E5ECF1",
+                 muted: str = "#8FA2B3"):
+        super().__init__(parent, bg=bg, bd=0, highlightthickness=0)
+        self.variable = variable
+        self.on_change = on_change
+        self.bg_color = bg
+        self.foreground = foreground
+        self.muted = muted
+        self.dragging = False
+        self.hovered = False
+
+        header = tk.Frame(self, bg=bg)
+        header.pack(fill="x", pady=(0, 2))
+        tk.Label(header, text=label, bg=bg, fg=foreground,
+                 font=("Yu Gothic UI", 10, "bold")).pack(side="left")
+        self.value_chip = tk.Canvas(header, width=60, height=24, bg=bg,
+                                    highlightthickness=0, bd=0)
+        self.value_chip.pack(side="right")
+        self.canvas = tk.Canvas(self, height=34, bg=bg, highlightthickness=0, bd=0,
+                                cursor="hand2")
+        self.canvas.pack(fill="x", expand=True)
+        self.canvas.bind("<Configure>", self._draw)
+        self.canvas.bind("<Button-1>", self._begin_drag)
+        self.canvas.bind("<B1-Motion>", self._drag)
+        self.canvas.bind("<ButtonRelease-1>", self._end_drag)
+        self.canvas.bind("<Enter>", self._enter)
+        self.canvas.bind("<Leave>", self._leave)
+        self.variable.trace_add("write", self._value_changed)
+        self._draw()
+
+    @classmethod
+    def _color_for_value(cls, value: int) -> str:
+        return _mix_color(cls.LOW_COLOR, cls.HIGH_COLOR, value / 100.0)
+
+    def _value_changed(self, *_args):
+        self._draw()
+
+    def _draw(self, _event=None):
+        self.canvas.delete("all")
+        self.value_chip.delete("all")
+        value = max(0, min(100, int(self.variable.get())))
+        color = self._color_for_value(value)
+        chip_fg = "#F0F4F6" if value < 52 else "#263744"
+        self.value_chip.create_polygon(
+            _rounded_points(1, 2, 59, 22, 10), fill=color, outline=""
+        )
+        self.value_chip.create_text(30, 12, text=f"{value}%", fill=chip_fg,
+                                    font=("Yu Gothic UI", 9, "bold"))
+
+        width = max(90, self.canvas.winfo_width())
+        left, right, y = 9, width - 10, 17
+        x = left + (right - left) * value / 100.0
+        self.canvas.create_line(left, y, right, y, fill="#293845",
+                                width=7, capstyle=tk.ROUND)
+        if x > left + 0.5:
+            self.canvas.create_line(left, y, x, y, fill=color,
+                                    width=7, capstyle=tk.ROUND)
+        radius = 8 if self.dragging else (7 if self.hovered else 6)
+        self.canvas.create_oval(x - radius - 2, y - radius - 2,
+                                x + radius + 2, y + radius + 2,
+                                fill="#2A3D4C", outline="")
+        self.canvas.create_oval(x - radius, y - radius, x + radius, y + radius,
+                                fill=color, outline="#E7EEF1", width=1)
+
+    def _set_from_x(self, x: float):
+        width = max(90, self.canvas.winfo_width())
+        left, right = 9, width - 10
+        value = round((x - left) * 100 / max(1, right - left))
+        value = max(0, min(100, value))
+        if value != self.variable.get():
+            self.variable.set(value)
+            if self.on_change:
+                self.on_change(value)
+
+    def _begin_drag(self, event):
+        self.dragging = True
+        self._set_from_x(event.x)
+        self._draw()
+
+    def _drag(self, event):
+        self._set_from_x(event.x)
+
+    def _end_drag(self, _event=None):
+        self.dragging = False
+        self._draw()
+
+    def _enter(self, _event=None):
+        self.hovered = True
+        self._draw()
+
+    def _leave(self, _event=None):
+        if not self.dragging:
+            self.hovered = False
+            self._draw()
+
+
 class TransparencyApp:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -198,122 +520,252 @@ class TransparencyApp:
         self.root.after(2000, self._watch_explorer)
 
     def _build_ui(self):
-        style = ttk.Style()
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
-        style.configure("TCheckbutton", background="#10151f", foreground="#e8edf5")
-        style.map("TCheckbutton", background=[("active", "#10151f")])
+        self.root.configure(bg="#0B1118")
+        self.root.geometry("760x980")
+        self.root.minsize(700, 880)
 
-        outer = tk.Frame(self.root, bg="#10151f", padx=22, pady=18)
+        outer = tk.Frame(self.root, bg="#0B1118", padx=22, pady=18)
         outer.pack(fill="both", expand=True)
-        tk.Label(outer, text="WINDOWS UI TRANSPARENCY", bg="#10151f", fg="#7dd3fc",
-                 font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        tk.Label(outer, text="Windows 11 の表示をカスタマイズ", bg="#10151f", fg="#f3f6fb",
-                 font=("Yu Gothic UI", 19, "bold")).pack(anchor="w", pady=(5, 2))
-        tk.Label(outer, text="背景・時計・タスクバーアイコン領域を、対応している範囲で個別調整します。",
-                 bg="#10151f", fg="#aab6c8", font=("Yu Gothic UI", 10),
-                 wraplength=630, justify="left").pack(anchor="w")
 
-        task_card = tk.Frame(outer, bg="#1b2433", padx=15, pady=12)
-        task_card.pack(fill="x", pady=(13, 10))
-        tk.Label(task_card, text="1. タスクバー背景", bg="#1b2433", fg="#e8edf5",
-                 font=("Yu Gothic UI", 11, "bold")).pack(anchor="w")
+        # App identity / compact, calm title area.
+        header = tk.Frame(outer, bg="#0B1118")
+        header.pack(fill="x", pady=(0, 13))
+        logo = tk.Canvas(header, width=52, height=52, bg="#0B1118",
+                         highlightthickness=0, bd=0)
+        logo.pack(side="left", padx=(0, 13))
+        logo.create_polygon(_rounded_points(1, 1, 51, 51, 15),
+                            fill="#29495E", outline="#607F93", width=1)
+        for x1, y1, x2, y2 in ((11, 11, 23, 23), (27, 11, 40, 23),
+                               (11, 27, 23, 40), (27, 27, 40, 40)):
+            logo.create_polygon(_rounded_points(x1, y1, x2, y2, 3),
+                                fill="#DCE8ED", outline="")
+        logo.create_polygon(_rounded_points(30, 28, 46, 44, 5),
+                            fill="#7FA5B9", outline="#E2EDF1", width=1)
+        title_area = tk.Frame(header, bg="#0B1118")
+        title_area.pack(side="left", fill="x", expand=True)
+        tk.Label(title_area, text="Windows UI Transparency",
+                 bg="#0B1118", fg="#E6EDF1",
+                 font=("Yu Gothic UI", 17, "bold")).pack(anchor="w")
+        tk.Label(title_area, text="Windows 11 の表示を、自分好みに静かに整える",
+                 bg="#0B1118", fg="#8DA0AE",
+                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(2, 0))
+        top_pill = RoundedPanel(header, height=36, fill="#14212C",
+                                border="#293B49", radius=16, inset=8)
+        top_pill.pack(side="right", padx=(8, 0), pady=8)
+        tk.Label(top_pill.inner, text="WINDOWS 11",
+                 bg="#14212C", fg="#B3C4CE",
+                 font=("Segoe UI", 8, "bold")).pack(expand=True)
+
+        # Taskbar background controls.
+        task_card = RoundedPanel(outer, height=292, fill="#131E29",
+                                 border="#263947", radius=22, inset=18)
+        task_card.pack(fill="x", pady=(0, 12))
+        tk.Label(task_card.inner, text="タスクバー背景",
+                 bg="#131E29", fg="#E7EEF2",
+                 font=("Yu Gothic UI", 12, "bold")).pack(anchor="w")
+        tk.Label(task_card.inner, text="透明度が高いほどスライダーの色も淡くなります。",
+                 bg="#131E29", fg="#8FA2B0",
+                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(2, 9))
+
+        mode_row = tk.Frame(task_card.inner, bg="#131E29")
+        mode_row.pack(fill="x", pady=(0, 10))
         self.mode = tk.StringVar(value=self.last_mode)
-        combo = ttk.Combobox(task_card, textvariable=self.mode, state="readonly",
-                             values=("透明", "ぼかし", "アクリル風", "通常に戻す"))
-        combo.pack(fill="x", pady=(6, 8))
-        combo.bind("<<ComboboxSelected>>", self._mode_changed)
-        self.opacity_label = tk.Label(task_card, text=f"色の濃さ: {self.last_opacity}%",
-                                      bg="#1b2433", fg="#d5deea", font=("Yu Gothic UI", 9))
-        self.opacity_label.pack(anchor="w")
-        self.opacity = tk.IntVar(value=self.last_opacity)
-        self.scale = tk.Scale(task_card, from_=0, to=100, orient="horizontal", variable=self.opacity,
-                              command=self._opacity_changed, bg="#1b2433", fg="#e8edf5",
-                              troughcolor="#34445c", highlightthickness=0, bd=0,
-                              activebackground="#7dd3fc", length=600)
-        self.scale.pack(fill="x")
-        buttons = tk.Frame(task_card, bg="#1b2433")
-        buttons.pack(fill="x", pady=(4, 0))
-        tk.Button(buttons, text="背景に適用", command=self.apply_taskbar, bg="#0284c7", fg="white",
-                  activebackground="#0369a1", activeforeground="white", relief="flat",
-                  font=("Yu Gothic UI", 10, "bold"), padx=14, pady=7, cursor="hand2").pack(side="left")
-        tk.Button(buttons, text="背景を標準に戻す", command=self.restore_taskbar, bg="#334155", fg="white",
-                  activebackground="#475569", activeforeground="white", relief="flat",
-                  font=("Yu Gothic UI", 9), padx=12, pady=7, cursor="hand2").pack(side="left", padx=8)
-        tk.Label(task_card, text="※ 背景効果はWindowsのビルドによって効き方が異なります。",
-                 bg="#1b2433", fg="#9caac0", font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(5, 0))
+        mode_specs = [
+            ("透明", "透明"),
+            ("ぼかし", "ぼかし"),
+            ("アクリル", "アクリル風"),
+            ("標準", "通常に戻す"),
+        ]
+        self.mode_buttons = {}
+        for label, value in mode_specs:
+            button = PillButton(
+                mode_row, label, command=lambda v=value: self.select_mode(v),
+                width=112, height=36, fill="#1B2A36", hover="#2B4050",
+                selected_fill="#3B5A6D", foreground="#DCE7ED",
+                border="#304656", selected=(self.mode.get() == value),
+                radius=18, font=("Yu Gothic UI", 9, "bold")
+            )
+            button.pack(side="left", fill="x", expand=True, padx=(0, 7))
+            self.mode_buttons[value] = button
+
+        self.opacity = tk.IntVar(value=self.last_opacity)  # Native alpha / opacity.
+        self.taskbar_transparency = tk.IntVar(value=100 - self.last_opacity)
+        self.taskbar_slider = TransparencySlider(
+            task_card.inner, "背景の透明度", self.taskbar_transparency,
+            on_change=self._taskbar_transparency_changed, bg="#131E29",
+            foreground="#DDE6EB", muted="#8FA2B0"
+        )
+        self.taskbar_slider.pack(fill="x", pady=(0, 7))
+
+        action_row = tk.Frame(task_card.inner, bg="#131E29")
+        action_row.pack(fill="x", pady=(3, 0))
+        PillButton(
+            action_row, "適用する", self.apply_taskbar, width=132, height=38,
+            fill="#344F61", hover="#45667A", selected_fill="#3B5A6D",
+            foreground="#F0F5F7", border="#527185", radius=19
+        ).pack(side="left")
+        PillButton(
+            action_row, "標準に戻す", self.restore_taskbar, width=132, height=38,
+            fill="#202E39", hover="#30414D", foreground="#CBD7DE",
+            border="#344653", radius=19
+        ).pack(side="left", padx=(9, 0))
+        tk.Label(task_card.inner,
+                 text="※ タスクバーの描画方式はWindowsのビルドによって異なります。",
+                 bg="#131E29", fg="#8295A4",
+                 font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(8, 0))
+
+        # Component controls.
+        item_card = RoundedPanel(outer, height=290, fill="#131E29",
+                                 border="#263947", radius=22, inset=18)
+        item_card.pack(fill="x", pady=(0, 12))
+        tk.Label(item_card.inner, text="個別の表示調整",
+                 bg="#131E29", fg="#E7EEF2",
+                 font=("Yu Gothic UI", 12, "bold")).pack(anchor="w")
+        tk.Label(item_card.inner, text="対象のウィンドウが検出できる環境でのみ適用できます。",
+                 bg="#131E29", fg="#8FA2B0",
+                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(2, 8))
 
         self.clock_opacity = tk.IntVar(value=self.settings["clock_opacity"])
         self.icons_opacity = tk.IntVar(value=self.settings["icons_opacity"])
-        self.clock_opacity_label = tk.Label(outer, text=self._component_label("時計", self.clock_opacity.get()),
-                                            bg="#10151f", fg="#e8edf5", font=("Yu Gothic UI", 10, "bold"))
-        self.clock_opacity_label.pack(anchor="w", pady=(2, 0))
-        clock_row = tk.Frame(outer, bg="#10151f")
-        clock_row.pack(fill="x")
-        tk.Scale(clock_row, from_=0, to=100, orient="horizontal", variable=self.clock_opacity,
-                 command=lambda _v: self._update_component_label("clock"),
-                 bg="#10151f", fg="#d5deea", troughcolor="#34445c", highlightthickness=0, bd=0,
-                 activebackground="#7dd3fc").pack(side="left", fill="x", expand=True)
-        tk.Button(clock_row, text="時計に適用", command=lambda: self.apply_component("clock"),
-                  bg="#334155", fg="white", activebackground="#475569", relief="flat",
-                  font=("Yu Gothic UI", 9), padx=10, pady=5).pack(side="left", padx=(8, 0))
+        self.clock_transparency = tk.IntVar(value=100 - self.clock_opacity.get())
+        self.icons_transparency = tk.IntVar(value=100 - self.icons_opacity.get())
 
-        self.icons_opacity_label = tk.Label(outer, text=self._component_label("アプリアイコン領域", self.icons_opacity.get()),
-                                            bg="#10151f", fg="#e8edf5", font=("Yu Gothic UI", 10, "bold"))
-        self.icons_opacity_label.pack(anchor="w", pady=(7, 0))
-        icons_row = tk.Frame(outer, bg="#10151f")
-        icons_row.pack(fill="x")
-        tk.Scale(icons_row, from_=0, to=100, orient="horizontal", variable=self.icons_opacity,
-                 command=lambda _v: self._update_component_label("icons"),
-                 bg="#10151f", fg="#d5deea", troughcolor="#34445c", highlightthickness=0, bd=0,
-                 activebackground="#7dd3fc").pack(side="left", fill="x", expand=True)
-        tk.Button(icons_row, text="アイコン領域に適用", command=lambda: self.apply_component("icons"),
-                  bg="#334155", fg="white", activebackground="#475569", relief="flat",
-                  font=("Yu Gothic UI", 9), padx=10, pady=5).pack(side="left", padx=(8, 0))
-        tk.Label(outer, text="個別表示の注意: 時計は TrayClockWClass、アプリアイコンは MSTaskListWClass が検出された場合のみ調整を試みます。後者はアイコン1個ずつではなく、グループ全体です。新しいWindows 11では共有XAML描画のため対象が見つからない場合があります。",
-                 bg="#10151f", fg="#9caac0", wraplength=630, justify="left",
-                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(3, 8))
+        clock_head = tk.Frame(item_card.inner, bg="#131E29")
+        clock_head.pack(fill="x")
+        tk.Label(clock_head, text="時計", bg="#131E29", fg="#DDE6EB",
+                 font=("Yu Gothic UI", 10, "bold")).pack(side="left")
+        PillButton(
+            clock_head, "時計に適用", lambda: self.apply_component("clock"),
+            width=116, height=32, fill="#1D2E3A", hover="#2F4656",
+            foreground="#DCE7ED", border="#314A5A", radius=16,
+            font=("Yu Gothic UI", 9, "bold")
+        ).pack(side="right")
+        self.clock_slider = TransparencySlider(
+            item_card.inner, "透明度", self.clock_transparency,
+            on_change=self._clock_transparency_changed, bg="#131E29",
+            foreground="#DDE6EB", muted="#8FA2B0"
+        )
+        self.clock_slider.pack(fill="x", pady=(0, 7))
 
-        options = tk.Frame(outer, bg="#1b2433", padx=14, pady=10)
-        options.pack(fill="x", pady=(4, 9))
-        ttk.Checkbutton(options, text="Explorer再起動後に設定を再適用する",
-                        variable=self.auto_reapply, command=self._save_current_settings).pack(anchor="w")
-        self.startup_check = ttk.Checkbutton(
-            options, text="Windowsへのサインイン時に起動（タスクマネージャーのスタートアップアプリに登録）",
-            variable=self.start_with_windows, command=self.toggle_startup)
-        self.startup_check.pack(anchor="w", pady=(5, 0))
+        divider = tk.Frame(item_card.inner, bg="#293B48", height=1)
+        divider.pack(fill="x", pady=(1, 8))
+
+        icons_head = tk.Frame(item_card.inner, bg="#131E29")
+        icons_head.pack(fill="x")
+        tk.Label(icons_head, text="アプリアイコン領域",
+                 bg="#131E29", fg="#DDE6EB",
+                 font=("Yu Gothic UI", 10, "bold")).pack(side="left")
+        PillButton(
+            icons_head, "アイコンに適用", lambda: self.apply_component("icons"),
+            width=132, height=32, fill="#1D2E3A", hover="#2F4656",
+            foreground="#DCE7ED", border="#314A5A", radius=16,
+            font=("Yu Gothic UI", 9, "bold")
+        ).pack(side="right")
+        self.icons_slider = TransparencySlider(
+            item_card.inner, "透明度", self.icons_transparency,
+            on_change=self._icons_transparency_changed, bg="#131E29",
+            foreground="#DDE6EB", muted="#8FA2B0"
+        )
+        self.icons_slider.pack(fill="x", pady=(0, 2))
+        tk.Label(item_card.inner,
+                 text="時計・アイコンは新しいWindows 11で独立したウィンドウとして検出できない場合があります。",
+                 bg="#131E29", fg="#8295A4", wraplength=655,
+                 justify="left", font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(2, 0))
+
+        # Options.
+        options_card = RoundedPanel(outer, height=116, fill="#131E29",
+                                    border="#263947", radius=22, inset=16)
+        options_card.pack(fill="x", pady=(0, 12))
+        tk.Label(options_card.inner, text="動作設定",
+                 bg="#131E29", fg="#E7EEF2",
+                 font=("Yu Gothic UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
+        self.auto_reapply = tk.BooleanVar(value=self.settings["auto_reapply"])
+        self.reapply_switch = SmoothSwitch(
+            options_card.inner, "Explorer再起動後に設定を再適用",
+            self.auto_reapply, command=self._save_current_settings,
+            bg="#131E29", foreground="#DDE6EB", muted="#7C8D9A"
+        )
+        self.reapply_switch.pack(fill="x", pady=(1, 5))
+        self.start_with_windows = tk.BooleanVar(value=self._startup_registered())
+        self.startup_switch = SmoothSwitch(
+            options_card.inner, "Windowsサインイン時に起動（タスクマネージャーに表示）",
+            self.start_with_windows, command=self.toggle_startup,
+            bg="#131E29", foreground="#DDE6EB", muted="#7C8D9A"
+        )
+        self.startup_switch.pack(fill="x")
         if not self._is_frozen_exe():
-            self.startup_check.configure(state="disabled")
-            tk.Label(options, text="※ スタートアップ登録はEXE版でのみ使用できます。GitHub ActionsでビルドしたEXEから設定してください。",
-                     bg="#1b2433", fg="#fbbf24", wraplength=600, justify="left",
-                     font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(3, 0))
-        tk.Label(options, text="EXEの場所を移動・削除すると登録先が無効になります。解除してから移動してください。",
-                 bg="#1b2433", fg="#9caac0", wraplength=600, justify="left",
-                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(3, 0))
+            self.startup_switch.set_enabled(False)
+            tk.Label(options_card.inner, text="自動起動登録はビルド済みEXEで利用できます。",
+                     bg="#131E29", fg="#B39B71",
+                     font=("Yu Gothic UI", 8)).pack(anchor="w", pady=(2, 0))
 
-        tk.Label(outer, textvariable=self.status, bg="#10151f", fg="#a7f3d0",
-                 wraplength=630, justify="left", font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(2, 0))
-        tk.Label(outer, text="制限: スタートメニュー・通知センター等の個別透明化には対応していません。Windows内部APIは将来の更新で動作が変わる場合があります。",
-                 bg="#10151f", fg="#8290a5", wraplength=630, justify="left",
-                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(5, 0))
+        # Persistent state feedback.
+        self.status_panel = RoundedPanel(outer, height=62, fill="#101B25",
+                                         border="#273B49", radius=20, inset=14)
+        self.status_panel.pack(fill="x")
+        status_row = tk.Frame(self.status_panel.inner, bg="#101B25")
+        status_row.pack(fill="both", expand=True)
+        self.status_dot = tk.Label(status_row, text="●", bg="#101B25",
+                                   fg="#8CA4B4", font=("Segoe UI", 12))
+        self.status_dot.pack(side="left", padx=(0, 9))
+        self.status_label = tk.Label(status_row, textvariable=self.status,
+                                     bg="#101B25", fg="#B8C8D2",
+                                     font=("Yu Gothic UI", 9), anchor="w",
+                                     justify="left", wraplength=640)
+        self.status_label.pack(side="left", fill="both", expand=True)
+        self.status.trace_add("write", self._refresh_status_style)
+        self._refresh_status_style()
 
-    @staticmethod
-    def _component_label(name: str, value: int) -> str:
-        return f"{name}の不透明度: {value}%（0%=透明 / 100%=不透明）"
-
-    def _update_component_label(self, component: str):
-        if component == "clock":
-            self.clock_opacity_label.configure(text=self._component_label("時計", self.clock_opacity.get()))
-        else:
-            self.icons_opacity_label.configure(text=self._component_label("アプリアイコン領域", self.icons_opacity.get()))
+    def select_mode(self, mode: str):
+        self.mode.set(mode)
+        self._mode_changed()
+        self._set_status(f"モードを「{mode}」に選択しました。適用するとWindowsに反映されます。")
 
     def _mode_changed(self, _event=None):
-        self.scale.configure(state="disabled" if self.mode.get() == "通常に戻す" else "normal")
+        for value, button in getattr(self, "mode_buttons", {}).items():
+            button.set_selected(self.mode.get() == value)
+
+    def _taskbar_transparency_changed(self, value: int):
+        self.opacity.set(100 - int(value))
+        self._set_status(f"背景の透明度を {value}% に調整中です。［適用する］で反映します。", "info")
+
+    def _clock_transparency_changed(self, value: int):
+        self.clock_opacity.set(100 - int(value))
+        self._set_status(f"時計の透明度を {value}% に調整中です。［時計に適用］で反映します。", "info")
+
+    def _icons_transparency_changed(self, value: int):
+        self.icons_opacity.set(100 - int(value))
+        self._set_status(f"アイコン領域の透明度を {value}% に調整中です。［アイコンに適用］で反映します。", "info")
 
     def _opacity_changed(self, _value=None):
-        self.opacity_label.configure(text=f"色の濃さ: {self.opacity.get()}%")
+        # Backward compatibility for older code paths.
+        if hasattr(self, "taskbar_transparency"):
+            self.taskbar_transparency.set(100 - int(self.opacity.get()))
+
+    def _set_status(self, message: str, _kind: str | None = None):
+        self.status.set(message)
+
+    def _refresh_status_style(self, *_args):
+        message = self.status.get()
+        negative = ("検出できませんでした", "適用を拒否", "変更できませんでした",
+                    "見つかりません", "エラー", "失敗", "対象外")
+        positive = ("設定しました", "登録しました", "解除しました", "適用しました",
+                    "標準状態に戻しました", "保存しました", "再適用しました", "完了")
+        if any(term in message for term in negative):
+            color = "#E0B8A8"
+            dot = "#CA8D73"
+        elif any(term in message for term in positive):
+            color = "#C1D8C8"
+            dot = "#8EB49A"
+        elif "調整中" in message or "適用しています" in message:
+            color = "#D3E1E8"
+            dot = "#A7C4D4"
+        else:
+            color = "#B8C8D2"
+            dot = "#8CA4B4"
+        if hasattr(self, "status_label"):
+            self.status_label.configure(fg=color)
+            self.status_dot.configure(fg=dot)
 
     def _is_frozen_exe(self) -> bool:
         return sys.platform == "win32" and bool(getattr(sys, "frozen", False))
@@ -379,8 +831,10 @@ class TransparencyApp:
 
     def apply_taskbar(self):
         mode, opacity = self.mode.get(), int(self.opacity.get())
+        self._set_status("タスクバーの設定を適用しています…")
+        self.root.update_idletasks()
         ok, message = apply_taskbar_effect(mode, opacity)
-        self.status.set(message)
+        self._set_status(("✓ " if ok else "！ ") + message)
         if ok:
             self.last_mode, self.last_opacity = mode, opacity
             self._save_current_settings()
@@ -390,10 +844,12 @@ class TransparencyApp:
     def restore_taskbar(self):
         self.mode.set("通常に戻す")
         self._mode_changed()
+        self._set_status("タスクバーを標準状態に戻しています…")
+        self.root.update_idletasks()
         ok, message = apply_taskbar_effect("通常に戻す")
         self.last_mode = "通常に戻す"
         self._save_current_settings()
-        self.status.set(message)
+        self._set_status(("✓ " if ok else "！ ") + message)
         if not ok:
             messagebox.showwarning(APP_TITLE, message)
 
@@ -404,8 +860,7 @@ class TransparencyApp:
             hwnd, class_name = find_component_window(component)
             if not hwnd:
                 label = "時計" if component == "clock" else "アプリアイコン領域"
-                expected = "TrayClockWClass" if component == "clock" else "MSTaskListWClass"
-                result = (False, f"{label}を個別のウィンドウとして検出できませんでした（{expected}）。このWindows 11ビルドでは共有XAML/DirectComposition描画のため個別制御できない可能性があります。")
+                result = (False, f"{label}を個別制御できません。このWindows 11では独立したウィンドウが公開されていない可能性があります。")
             else:
                 getter = _window_long_function(True)
                 setter = _window_long_function(False)
@@ -426,7 +881,7 @@ class TransparencyApp:
                             if current_style & WS_EX_LAYERED:
                                 result = (False, f"{class_name}は既にレイヤードウィンドウです。元の透明度を安全に復元できないため変更を見送りました。")
                                 if show_status:
-                                    self.status.set(result[1])
+                                    self._set_status(result[1])
                                 return result
                             original_style = current_style
                             self._component_original_styles[hwnd_key] = original_style
@@ -452,8 +907,14 @@ class TransparencyApp:
 
     def apply_component(self, component: str):
         value = int(self.clock_opacity.get() if component == "clock" else self.icons_opacity.get())
+        label = "時計" if component == "clock" else "アイコン領域"
+        self._set_status(f"{label}の設定を適用しています…")
+        self.root.update_idletasks()
         self._save_current_settings()
-        self._set_component_opacity(component, value)
+        ok, message = self._set_component_opacity(component, value, show_status=False)
+        self._set_status(("✓ " if ok else "！ ") + message)
+        if not ok:
+            messagebox.showwarning(APP_TITLE, message)
 
     def _restore_all_component_styles(self):
         setter = _window_long_function(False)
@@ -476,7 +937,7 @@ class TransparencyApp:
             for component, variable in (("clock", self.clock_opacity), ("icons", self.icons_opacity)):
                 if int(variable.get()) < 100:
                     self._set_component_opacity(component, int(variable.get()), show_status=False)
-            self.status.set("Explorerの再起動を検出し、保存済み設定の再適用を試みました。")
+            self._set_status("Explorerの再起動を検出し、保存済み設定の再適用を試みました。")
         self._last_hwnd = current
         self.root.after(2000, self._watch_explorer)
 
