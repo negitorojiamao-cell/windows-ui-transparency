@@ -15,16 +15,16 @@ Windows 11 のタスクバー背景や、対応ビルドでの時計・アイコ
 - 設定保存とExplorer再起動後の再適用
 - EXE版からWindowsサインイン時の自動起動を登録・解除
 - アイコン付きの単体 `WindowsUITransparency.exe` をGitHub Actionsでビルド
-- ZIPにはEXE、ICO、PNGプレビューを同梱
+- GitHub Actionsの成果物にはEXEファイルだけを格納（ZIPの中に別のZIPは入れない）
 
 ## EXEをダウンロード
 
 1. GitHubリポジトリの [Actions](https://github.com/negitorojiamao-cell/windows-ui-transparency/actions) を開く
 2. 最新の **Build Windows EXE** 実行を開く
-3. 成功した実行の **Artifacts** から `WindowsUITransparency-Windows` をダウンロード
-4. ZIPを展開して `WindowsUITransparency.exe` を起動
+3. 成功した実行の **Artifacts** から `WindowsUITransparency-EXE` をダウンロード
+4. GitHubがダウンロード用に作るZIPを1回だけ展開し、中の `WindowsUITransparency.exe` を起動。ZIPの中に別のZIPはありません。
 
-EXEにはアプリアイコンが埋め込まれます。別途同梱される `windows-ui-transparency.ico` はショートカットなどにも利用できます。未署名EXEのため、SmartScreenが警告を表示する場合があります。
+EXEにはアプリアイコンが埋め込まれます。未署名EXEのため、SmartScreenが警告を表示する場合があります。
 
 ## スタートアップ登録
 
